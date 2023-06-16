@@ -1,6 +1,6 @@
 module github.com/berty/go-libp2p-rendezvous
 
-go 1.18
+go 1.19
 
 require (
 	github.com/berty/go-libp2p-mock v1.0.1
