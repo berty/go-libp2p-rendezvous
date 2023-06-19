@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
+	mocknet "github.com/berty/go-libp2p-mock"
 	"github.com/libp2p/go-libp2p/core/discovery"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
-	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 )
 
 func getRendezvousDiscovery(hosts []host.Host) []discovery.Discovery {
