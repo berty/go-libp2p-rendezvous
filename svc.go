@@ -231,7 +231,7 @@ func (rz *RendezvousService) handleDiscover(p peer.ID, m *pb.Message_Discover) *
 		return newDiscoverResponseError(pb.Message_E_INTERNAL_ERROR, "database error")
 	}
 
-	log.Infof("discover query: %s %s -> %d", p, ns, len(regs))
+	log.Debugf("discover query: %s %s -> %d", p, ns, len(regs))
 
 	return newDiscoverResponse(regs, cookie)
 }
