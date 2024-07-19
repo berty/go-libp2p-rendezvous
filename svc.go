@@ -35,7 +35,7 @@ func (rz *RendezvousService) handleStream(s inet.Stream) {
 	defer s.Reset()
 
 	pid := s.Conn().RemotePeer()
-	log.Debugf("New stream from %s", pid.Pretty())
+	log.Debugf("New stream from %s", pid.String())
 
 	r := ggio.NewDelimitedReader(s, inet.MessageSizeMax)
 	w := ggio.NewDelimitedWriter(s)
@@ -189,7 +189,7 @@ func (rz *RendezvousService) handleUnregister(p peer.ID, m *pb.Message_Unregiste
 		}
 
 		if mp != p {
-			return fmt.Errorf("peer id mismatch: %s asked to unregister %s", p.Pretty(), mp.Pretty())
+			return fmt.Errorf("peer id mismatch: %s asked to unregister %s", p.String(), mp.String())
 		}
 	}
 
