@@ -2,11 +2,12 @@ package rendezvous
 
 import (
 	"fmt"
+	"io"
 
-	ggio "github.com/gogo/protobuf/io"
 	"github.com/libp2p/go-libp2p/core/host"
 	inet "github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"google.golang.org/protobuf/proto"
 
 	db "github.com/berty/go-libp2p-rendezvous/db"
 	pb "github.com/berty/go-libp2p-rendezvous/pb"
@@ -34,18 +35,23 @@ func NewRendezvousService(host host.Host, db db.DB, rzs ...RendezvousSync) *Rend
 func (rz *RendezvousService) handleStream(s inet.Stream) {
 	defer s.Reset()
 
+	buffer := make([]byte, inet.MessageSizeMax)
+
 	pid := s.Conn().RemotePeer()
 	log.Debugf("New stream from %s", pid.String())
-
-	r := ggio.NewDelimitedReader(s, inet.MessageSizeMax)
-	w := ggio.NewDelimitedWriter(s)
 
 	for {
 		var req pb.Message
 		var res pb.Message
 
-		err := r.ReadMsg(&req)
+		n, err := s.Read(buffer)
+		if err != nil && err != io.EOF {
+			return
+		}
+
+		err = proto.Unmarshal(buffer[:n], &req)
 		if err != nil {
+			log.Errorf("error unmarshalling request: %s", err.Error())
 			return
 		}
 
@@ -55,7 +61,13 @@ func (rz *RendezvousService) handleStream(s inet.Stream) {
 			r := rz.handleRegister(pid, req.GetRegister())
 			res.Type = pb.Message_REGISTER_RESPONSE
 			res.RegisterResponse = r
-			err = w.WriteMsg(&res)
+			msgBytes, err := proto.Marshal(&res)
+			if err != nil {
+				log.Errorf("error marshalling response: %s", err.Error())
+				return
+			}
+
+			_, err = s.Write(msgBytes)
 			if err != nil {
 				log.Debugf("Error writing response: %s", err.Error())
 				return
@@ -71,7 +83,12 @@ func (rz *RendezvousService) handleStream(s inet.Stream) {
 			r := rz.handleDiscover(pid, req.GetDiscover())
 			res.Type = pb.Message_DISCOVER_RESPONSE
 			res.DiscoverResponse = r
-			err = w.WriteMsg(&res)
+			msgBytes, err := proto.Marshal(&res)
+			if err != nil {
+				log.Errorf("error marshalling response: %s", err.Error())
+				return
+			}
+			_, err = s.Write(msgBytes)
 			if err != nil {
 				log.Debugf("Error writing response: %s", err.Error())
 				return
@@ -81,7 +98,12 @@ func (rz *RendezvousService) handleStream(s inet.Stream) {
 			r := rz.handleDiscoverSubscribe(pid, req.GetDiscoverSubscribe())
 			res.Type = pb.Message_DISCOVER_SUBSCRIBE_RESPONSE
 			res.DiscoverSubscribeResponse = r
-			err = w.WriteMsg(&res)
+			msgBytes, err := proto.Marshal(&res)
+			if err != nil {
+				log.Errorf("error marshalling response: %s", err.Error())
+				return
+			}
+			_, err = s.Write(msgBytes)
 			if err != nil {
 				log.Debugf("Error writing response: %s", err.Error())
 				return

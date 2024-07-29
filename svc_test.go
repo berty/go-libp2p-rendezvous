@@ -3,16 +3,17 @@ package rendezvous
 import (
 	"context"
 	"fmt"
+	"io"
 	"math/rand"
 	"testing"
 	"time"
 
 	mocknet "github.com/berty/go-libp2p-mock"
-	ggio "github.com/gogo/protobuf/io"
 	"github.com/libp2p/go-libp2p/core/host"
 	inet "github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
 	db "github.com/berty/go-libp2p-rendezvous/db/sqlite"
 	pb "github.com/berty/go-libp2p-rendezvous/pb"
@@ -140,14 +141,23 @@ func TestSVCErrors(t *testing.T) {
 	require.NoError(t, err)
 	defer svc.DB.Close()
 
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	seededRand := rand.New(rand.NewSource(time.Now().UnixNano()))
+	generateRandomString := func(length int) string {
+		b := make([]byte, length)
+		for i := range b {
+			b[i] = charset[seededRand.Intn(len(charset))]
+		}
+		return string(b)
+	}
+
 	// testable registration errors
 	res, err := doTestRequest(ctx, hosts[1], hosts[0].ID(),
 		newRegisterMessage("", peer.AddrInfo{}, 0))
 	require.NoError(t, err)
 	require.Equal(t, pb.Message_E_INVALID_NAMESPACE, res.GetRegisterResponse().GetStatus())
 
-	badns := make([]byte, 2*MaxNamespaceLength)
-	rand.Read(badns)
+	badns := generateRandomString(2 * MaxNamespaceLength)
 	res, err = doTestRequest(ctx, hosts[1], hosts[0].ID(),
 		newRegisterMessage(string(badns), peer.AddrInfo{}, 0))
 	require.NoError(t, err)
@@ -206,14 +216,14 @@ func TestSVCErrors(t *testing.T) {
 	require.Equal(t, pb.Message_E_INVALID_NAMESPACE, res.GetDiscoverResponse().GetStatus())
 
 	badcookie := make([]byte, 10)
-	rand.Read(badcookie)
+	seededRand.Read(badcookie)
 	res, err = doTestRequest(ctx, hosts[1], hosts[0].ID(),
 		newDiscoverMessage("foo", 0, badcookie))
 	require.NoError(t, err)
 	require.Equal(t, pb.Message_E_INVALID_COOKIE, res.GetDiscoverResponse().GetStatus())
 
 	badcookie = make([]byte, 40)
-	rand.Read(badcookie)
+	seededRand.Read(badcookie)
 	res, err = doTestRequest(ctx, hosts[1], hosts[0].ID(),
 		newDiscoverMessage("foo", 0, badcookie))
 	require.NoError(t, err)
@@ -227,16 +237,22 @@ func doTestRequest(ctx context.Context, host host.Host, rp peer.ID, m *pb.Messag
 	}
 	defer s.Close()
 
-	r := ggio.NewDelimitedReader(s, inet.MessageSizeMax)
-	w := ggio.NewDelimitedWriter(s)
-
-	err = w.WriteMsg(m)
+	mBytes, err := proto.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+	_, err = s.Write(mBytes)
 	if err != nil {
 		return nil, err
 	}
 
 	res := new(pb.Message)
-	err = r.ReadMsg(res)
+	buffer := make([]byte, inet.MessageSizeMax)
+	n, err := s.Read(buffer)
+	if err != nil && err != io.EOF {
+		return nil, err
+	}
+	err = proto.Unmarshal(buffer[:n], res)
 	if err != nil {
 		return nil, err
 	}
