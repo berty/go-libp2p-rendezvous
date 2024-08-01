@@ -5,7 +5,6 @@ go 1.22
 toolchain go1.22.5
 
 require (
-	github.com/berty/go-libp2p-mock v1.0.2-0.20240719150538-d7088679a8a7
 	github.com/google/uuid v1.4.0
 	github.com/ipfs/go-log/v2 v2.5.1
 	github.com/libp2p/go-libp2p v0.34.1
