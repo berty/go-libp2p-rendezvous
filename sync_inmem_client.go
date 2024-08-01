@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"sync"
 
 	"github.com/google/uuid"
@@ -12,9 +11,9 @@ import (
 	inet "github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
-	"google.golang.org/protobuf/proto"
 
 	pb "github.com/berty/go-libp2p-rendezvous/pb"
+	protoio "github.com/berty/go-libp2p-rendezvous/protoio"
 )
 
 type client struct {
@@ -58,19 +57,13 @@ func (c *client) getStreamToPeer(pidStr string) (inet.Stream, error) {
 }
 
 func (c *client) streamListener(s inet.Stream) {
+	r := protoio.NewDelimitedReader(s, inet.MessageSizeMax)
 	record := &pb.RegistrationRecord{}
 
 	for {
-		buffer := make([]byte, inet.MessageSizeMax)
-		n, err := s.Read(buffer)
-		if err != nil && err != io.EOF {
-			log.Errorf("unable to decode message: %s", err.Error())
-			return
-		}
-
-		err = proto.Unmarshal(buffer[:n], record)
+		err := r.ReadMsg(record)
 		if err != nil {
-			log.Errorf("error unmarshalling request: %s", err.Error())
+			log.Errorf("unable to decode message: %s", err.Error())
 			return
 		}
 
@@ -125,16 +118,14 @@ func (c *client) Subscribe(ctx context.Context, syncDetails string) (<-chan *Reg
 		return nil, fmt.Errorf("unable to get stream to peer: %w", err)
 	}
 
-	msbBytes, err := proto.Marshal(&pb.Message{
+	w := protoio.NewDelimitedWriter(s)
+
+	err = w.WriteMsg(&pb.Message{
 		Type: pb.Message_DISCOVER_SUBSCRIBE,
 		DiscoverSubscribe: &pb.Message_DiscoverSubscribe{
 			Ns: psDetails.ChannelName,
 		},
 	})
-	if err != nil {
-		return nil, fmt.Errorf("unable to marshal message: %w", err)
-	}
-	_, err = s.Write(msbBytes)
 	if err != nil {
 		return nil, fmt.Errorf("unable to query server")
 	}

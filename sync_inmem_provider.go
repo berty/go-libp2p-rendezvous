@@ -3,16 +3,15 @@ package rendezvous
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"sync"
 	"time"
 
 	pb "github.com/berty/go-libp2p-rendezvous/pb"
+	protoio "github.com/berty/go-libp2p-rendezvous/protoio"
 	"github.com/libp2p/go-libp2p/core/host"
 	inet "github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
-	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -28,7 +27,7 @@ type PubSub struct {
 
 type PubSubSubscribers struct {
 	mu               sync.RWMutex
-	subscribers      map[peer.ID]io.Writer
+	subscribers      map[peer.ID]protoio.Writer
 	lastAnnouncement *pb.RegistrationRecord
 }
 
@@ -73,7 +72,7 @@ func (ps *PubSub) getOrCreateTopic(ns string) *PubSubSubscribers {
 	}
 
 	ps.topics[ns] = &PubSubSubscribers{
-		subscribers:      map[peer.ID]io.Writer{},
+		subscribers:      map[peer.ID]protoio.Writer{},
 		lastAnnouncement: nil,
 	}
 	return ps.topics[ns]
@@ -81,23 +80,18 @@ func (ps *PubSub) getOrCreateTopic(ns string) *PubSubSubscribers {
 
 func (ps *PubSub) Register(pid peer.ID, ns string, addrs [][]byte, ttlAsSeconds int, counter uint64) {
 	topic := ps.getOrCreateTopic(ns)
-	data := &pb.RegistrationRecord{
+	dataToSend := &pb.RegistrationRecord{
 		Id:    pid.String(),
 		Addrs: addrs,
 		Ns:    ns,
 		Ttl:   time.Now().Add(time.Duration(ttlAsSeconds) * time.Second).UnixMilli(),
 	}
-	dataBytes, err := proto.Marshal(data)
-	if err != nil {
-		log.Errorf("unable to marshal registration record: %s", err.Error())
-		return
-	}
 
 	topic.mu.Lock()
-	topic.lastAnnouncement = data
+	topic.lastAnnouncement = dataToSend
 	toNotify := topic.subscribers
 	for _, stream := range toNotify {
-		if _, err := stream.Write(dataBytes); err != nil {
+		if err := stream.WriteMsg(dataToSend); err != nil {
 			log.Errorf("unable to notify rendezvous data update: %s", err.Error())
 		}
 	}
@@ -115,11 +109,13 @@ func (ps *PubSub) Listen() {
 func (ps *PubSub) handleStream(s inet.Stream) {
 	defer s.Reset()
 
+	r := protoio.NewDelimitedReader(s, inet.MessageSizeMax)
+	w := protoio.NewDelimitedWriter(s)
+
 	subscribedTopics := map[string]struct{}{}
 
 	for {
 		var req pb.Message
-		buffer := make([]byte, inet.MessageSizeMax)
 
 		defer func() {
 			for ns := range subscribedTopics {
@@ -130,15 +126,9 @@ func (ps *PubSub) handleStream(s inet.Stream) {
 			}
 		}()
 
-		n, err := s.Read(buffer)
-		if err != nil && err != io.EOF {
-			log.Errorf("unable to read from stream: %s", err.Error())
-			return
-		}
-
-		err = proto.Unmarshal(buffer[:n], &req)
+		err := r.ReadMsg(&req)
 		if err != nil {
-			log.Errorf("error unmarshalling request: %s", err.Error())
+			log.Errorf("unable to read from stream: %s", err.Error())
 			return
 		}
 
@@ -153,16 +143,11 @@ func (ps *PubSub) handleStream(s inet.Stream) {
 			continue
 		}
 
-		topic.subscribers[s.Conn().RemotePeer()] = s
+		topic.subscribers[s.Conn().RemotePeer()] = w
 		subscribedTopics[req.DiscoverSubscribe.Ns] = struct{}{}
 		lastAnnouncement := topic.lastAnnouncement
 		if lastAnnouncement != nil {
-			msgBytes, err := proto.Marshal(lastAnnouncement)
-			if err != nil {
-				log.Errorf("error marshalling response: %s", err.Error())
-				continue
-			}
-			if _, err := s.Write(msgBytes); err != nil {
+			if err := w.WriteMsg(lastAnnouncement); err != nil {
 				log.Errorf("unable to write announcement: %s", err.Error())
 			}
 		}

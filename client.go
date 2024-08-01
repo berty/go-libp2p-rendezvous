@@ -3,16 +3,15 @@ package rendezvous
 import (
 	"context"
 	"fmt"
-	"io"
 	"math/rand"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
 	inet "github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"google.golang.org/protobuf/proto"
 
 	pb "github.com/berty/go-libp2p-rendezvous/pb"
+	protoio "github.com/berty/go-libp2p-rendezvous/protoio"
 )
 
 var DiscoverAsyncInterval = 2 * time.Minute
@@ -75,7 +74,8 @@ func (rp *rendezvousPoint) Register(ctx context.Context, ns string, ttl int) (ti
 	}
 	defer s.Reset()
 
-	buffer := make([]byte, inet.MessageSizeMax)
+	r := protoio.NewDelimitedReader(s, inet.MessageSizeMax)
+	w := protoio.NewDelimitedWriter(s)
 
 	addrs := rp.addrFactory(rp.host.Addrs())
 	if len(addrs) == 0 {
@@ -84,23 +84,13 @@ func (rp *rendezvousPoint) Register(ctx context.Context, ns string, ttl int) (ti
 
 	log.Debugf("advertising on `%s` with: %v", ns, addrs)
 	req := newRegisterMessage(ns, peer.AddrInfo{ID: rp.host.ID(), Addrs: addrs}, ttl)
-	reqBytes, err := proto.Marshal(req)
-	if err != nil {
-		return 0, err
-	}
-	_, err = s.Write(reqBytes)
+	err = w.WriteMsg(req)
 	if err != nil {
 		return 0, err
 	}
 
 	var res pb.Message
-	n, err := s.Read(buffer)
-	if err != nil && err != io.EOF {
-		return 0, err
-	}
-
-	err = proto.Unmarshal(buffer[:n], &res)
-	if err != nil {
+	if err := r.ReadMsg(&res); err != nil {
 		return 0, err
 	}
 
@@ -170,14 +160,9 @@ func (rp *rendezvousPoint) Unregister(ctx context.Context, ns string) error {
 	}
 	defer s.Close()
 
+	w := protoio.NewDelimitedWriter(s)
 	req := newUnregisterMessage(ns, rp.host.ID())
-	msgBytes, err := proto.Marshal(req)
-	if err != nil {
-		return err
-	}
-
-	_, err = s.Write(msgBytes)
-	return err
+	return w.WriteMsg(req)
 }
 
 func (rc *rendezvousClient) Unregister(ctx context.Context, ns string) error {
@@ -191,29 +176,20 @@ func (rp *rendezvousPoint) Discover(ctx context.Context, ns string, limit int, c
 	}
 	defer s.Reset()
 
-	return discoverQuery(ns, limit, cookie, s, s)
+	r := protoio.NewDelimitedReader(s, inet.MessageSizeMax)
+	w := protoio.NewDelimitedWriter(s)
+	return discoverQuery(ns, limit, cookie, r, w)
 }
 
-func discoverQuery(ns string, limit int, cookie []byte, r io.Reader, w io.Writer) ([]Registration, []byte, error) {
+func discoverQuery(ns string, limit int, cookie []byte, r protoio.Reader, w protoio.Writer) ([]Registration, []byte, error) {
 	req := newDiscoverMessage(ns, limit, cookie)
-	reqBytes, err := proto.Marshal(req)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	_, err = w.Write(reqBytes)
+	err := w.WriteMsg(req)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	var res pb.Message
-	buffer := make([]byte, inet.MessageSizeMax)
-	n, err := r.Read(buffer)
-	if err != nil && err != io.EOF {
-		return nil, nil, err
-	}
-
-	err = proto.Unmarshal(buffer[:n], &res)
+	err = r.ReadMsg(&res)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -256,6 +232,9 @@ func discoverAsync(ctx context.Context, ns string, s inet.Stream, ch chan Regist
 	defer s.Reset()
 	defer close(ch)
 
+	r := protoio.NewDelimitedReader(s, inet.MessageSizeMax)
+	w := protoio.NewDelimitedWriter(s)
+
 	const batch = 200
 
 	var (
@@ -265,7 +244,7 @@ func discoverAsync(ctx context.Context, ns string, s inet.Stream, ch chan Regist
 	)
 
 	for {
-		regs, cookie, err = discoverQuery(ns, batch, cookie, s, s)
+		regs, cookie, err = discoverQuery(ns, batch, cookie, r, w)
 		if err != nil {
 			// TODO robust error recovery
 			//      - handle closed streams with backoff + new stream, preserving the cookie
@@ -360,7 +339,10 @@ func (rp *rendezvousPoint) DiscoverSubscribe(ctx context.Context, ns string, ser
 	}
 	defer s.Close()
 
-	subType, subDetails, err := discoverSubscribeQuery(ns, serviceTypes, s, s)
+	r := protoio.NewDelimitedReader(s, inet.MessageSizeMax)
+	w := protoio.NewDelimitedWriter(s)
+
+	subType, subDetails, err := discoverSubscribeQuery(ns, serviceTypes, r, w)
 	if err != nil {
 		return nil, fmt.Errorf("discover subscribe error: %w", err)
 	}
@@ -400,30 +382,20 @@ func (rp *rendezvousPoint) DiscoverSubscribe(ctx context.Context, ns string, ser
 	return ch, nil
 }
 
-func discoverSubscribeQuery(ns string, serviceTypes []string, r io.Reader, w io.Writer) (subType string, subDetails string, err error) {
+func discoverSubscribeQuery(ns string, serviceTypes []string, r protoio.Reader, w protoio.Writer) (subType string, subDetails string, err error) {
 	req := &pb.Message{
 		Type:              pb.Message_DISCOVER_SUBSCRIBE,
 		DiscoverSubscribe: newDiscoverSubscribeMessage(ns, serviceTypes),
 	}
-	reqBytes, err := proto.Marshal(req)
-	if err != nil {
-		return "", "", fmt.Errorf("marshal err: %w", err)
-	}
-	_, err = w.Write(reqBytes)
+	err = w.WriteMsg(req)
 	if err != nil {
 		return "", "", fmt.Errorf("write err: %w", err)
 	}
 
 	var res pb.Message
-	buffer := make([]byte, inet.MessageSizeMax)
-	n, err := r.Read(buffer)
-	if err != nil && err != io.EOF {
-		return "", "", fmt.Errorf("read err: %w", err)
-	}
-
-	err = proto.Unmarshal(buffer[:n], &res)
+	err = r.ReadMsg(&res)
 	if err != nil {
-		return "", "", fmt.Errorf("unmarshal err: %w", err)
+		return "", "", fmt.Errorf("read err: %w", err)
 	}
 
 	if res.GetType() != pb.Message_DISCOVER_SUBSCRIBE_RESPONSE {

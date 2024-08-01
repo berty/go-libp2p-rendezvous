@@ -3,7 +3,6 @@ package rendezvous
 import (
 	"context"
 	"fmt"
-	"io"
 	"math/rand"
 	"testing"
 	"time"
@@ -13,10 +12,10 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/proto"
 
 	db "github.com/berty/go-libp2p-rendezvous/db/sqlite"
 	pb "github.com/berty/go-libp2p-rendezvous/pb"
+	protoio "github.com/berty/go-libp2p-rendezvous/protoio"
 	"github.com/berty/go-libp2p-rendezvous/test_utils"
 )
 
@@ -237,22 +236,16 @@ func doTestRequest(ctx context.Context, host host.Host, rp peer.ID, m *pb.Messag
 	}
 	defer s.Close()
 
-	mBytes, err := proto.Marshal(m)
-	if err != nil {
-		return nil, err
-	}
-	_, err = s.Write(mBytes)
+	r := protoio.NewDelimitedReader(s, inet.MessageSizeMax)
+	w := protoio.NewDelimitedWriter(s)
+
+	err = w.WriteMsg(m)
 	if err != nil {
 		return nil, err
 	}
 
 	res := new(pb.Message)
-	buffer := make([]byte, inet.MessageSizeMax)
-	n, err := s.Read(buffer)
-	if err != nil && err != io.EOF {
-		return nil, err
-	}
-	err = proto.Unmarshal(buffer[:n], res)
+	err = r.ReadMsg(res)
 	if err != nil {
 		return nil, err
 	}
