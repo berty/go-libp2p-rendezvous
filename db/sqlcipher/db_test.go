@@ -93,7 +93,7 @@ func TestOpenCloseFSDB(t *testing.T) {
 	nonce1 := db.nonce
 
 	// let the flush goroutine run its cleanup act
-	time.Sleep(1 * time.Second)
+	time.Sleep(2 * time.Second)
 
 	err = db.Close()
 	if err != nil {
@@ -108,7 +108,7 @@ func TestOpenCloseFSDB(t *testing.T) {
 	nonce2 := db.nonce
 
 	// let the flush goroutine run its cleanup act
-	time.Sleep(1 * time.Second)
+	time.Sleep(2 * time.Second)
 
 	err = db.Close()
 	if err != nil {
