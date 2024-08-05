@@ -24,8 +24,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v3.3.0
         with:
-          go-version: ${{ matrix.golang }}
-          version: v1.50.1
+          version: v1.55.2
           args: --timeout=10m
 
   go-tests:
