@@ -117,18 +117,14 @@ func (ps *PubSub) handleStream(s inet.Stream) {
 	for {
 		var req pb.Message
 
-		defer func() {
+		err := r.ReadMsg(&req)
+		if err != nil {
 			for ns := range subscribedTopics {
 				topic := ps.getOrCreateTopic(ns)
 				topic.mu.Lock()
 				delete(topic.subscribers, s.Conn().RemotePeer())
 				topic.mu.Unlock()
 			}
-		}()
-
-		err := r.ReadMsg(&req)
-		if err != nil {
-			log.Errorf("unable to read from stream: %s", err.Error())
 			return
 		}
 
