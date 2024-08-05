@@ -3,13 +3,13 @@ package rendezvous
 import (
 	"fmt"
 
-	ggio "github.com/gogo/protobuf/io"
 	"github.com/libp2p/go-libp2p/core/host"
 	inet "github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	db "github.com/berty/go-libp2p-rendezvous/db"
 	pb "github.com/berty/go-libp2p-rendezvous/pb"
+	protoio "github.com/berty/go-libp2p-rendezvous/protoio"
 )
 
 const (
@@ -37,15 +37,14 @@ func (rz *RendezvousService) handleStream(s inet.Stream) {
 	pid := s.Conn().RemotePeer()
 	log.Debugf("New stream from %s", pid.String())
 
-	r := ggio.NewDelimitedReader(s, inet.MessageSizeMax)
-	w := ggio.NewDelimitedWriter(s)
+	r := protoio.NewDelimitedReader(s, inet.MessageSizeMax)
+	w := protoio.NewDelimitedWriter(s)
 
 	for {
 		var req pb.Message
 		var res pb.Message
 
-		err := r.ReadMsg(&req)
-		if err != nil {
+		if err := r.ReadMsg(&req); err != nil {
 			return
 		}
 
@@ -55,7 +54,8 @@ func (rz *RendezvousService) handleStream(s inet.Stream) {
 			r := rz.handleRegister(pid, req.GetRegister())
 			res.Type = pb.Message_REGISTER_RESPONSE
 			res.RegisterResponse = r
-			err = w.WriteMsg(&res)
+
+			err := w.WriteMsg(&res)
 			if err != nil {
 				log.Debugf("Error writing response: %s", err.Error())
 				return
@@ -71,7 +71,7 @@ func (rz *RendezvousService) handleStream(s inet.Stream) {
 			r := rz.handleDiscover(pid, req.GetDiscover())
 			res.Type = pb.Message_DISCOVER_RESPONSE
 			res.DiscoverResponse = r
-			err = w.WriteMsg(&res)
+			err := w.WriteMsg(&res)
 			if err != nil {
 				log.Debugf("Error writing response: %s", err.Error())
 				return
@@ -81,7 +81,7 @@ func (rz *RendezvousService) handleStream(s inet.Stream) {
 			r := rz.handleDiscoverSubscribe(pid, req.GetDiscoverSubscribe())
 			res.Type = pb.Message_DISCOVER_SUBSCRIBE_RESPONSE
 			res.DiscoverSubscribeResponse = r
-			err = w.WriteMsg(&res)
+			err := w.WriteMsg(&res)
 			if err != nil {
 				log.Debugf("Error writing response: %s", err.Error())
 				return

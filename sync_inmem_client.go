@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sync"
 
-	ggio "github.com/gogo/protobuf/io"
 	"github.com/google/uuid"
 	"github.com/libp2p/go-libp2p/core/host"
 	inet "github.com/libp2p/go-libp2p/core/network"
@@ -14,6 +13,7 @@ import (
 	"github.com/multiformats/go-multiaddr"
 
 	pb "github.com/berty/go-libp2p-rendezvous/pb"
+	protoio "github.com/berty/go-libp2p-rendezvous/protoio"
 )
 
 type client struct {
@@ -57,7 +57,7 @@ func (c *client) getStreamToPeer(pidStr string) (inet.Stream, error) {
 }
 
 func (c *client) streamListener(s inet.Stream) {
-	r := ggio.NewDelimitedReader(s, inet.MessageSizeMax)
+	r := protoio.NewDelimitedReader(s, inet.MessageSizeMax)
 	record := &pb.RegistrationRecord{}
 
 	for {
@@ -118,13 +118,14 @@ func (c *client) Subscribe(ctx context.Context, syncDetails string) (<-chan *Reg
 		return nil, fmt.Errorf("unable to get stream to peer: %w", err)
 	}
 
-	w := ggio.NewDelimitedWriter(s)
+	w := protoio.NewDelimitedWriter(s)
 
 	err = w.WriteMsg(&pb.Message{
 		Type: pb.Message_DISCOVER_SUBSCRIBE,
 		DiscoverSubscribe: &pb.Message_DiscoverSubscribe{
 			Ns: psDetails.ChannelName,
-		}})
+		},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("unable to query server")
 	}

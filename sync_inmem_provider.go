@@ -7,7 +7,7 @@ import (
 	"time"
 
 	pb "github.com/berty/go-libp2p-rendezvous/pb"
-	ggio "github.com/gogo/protobuf/io"
+	protoio "github.com/berty/go-libp2p-rendezvous/protoio"
 	"github.com/libp2p/go-libp2p/core/host"
 	inet "github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -27,7 +27,7 @@ type PubSub struct {
 
 type PubSubSubscribers struct {
 	mu               sync.RWMutex
-	subscribers      map[peer.ID]ggio.Writer
+	subscribers      map[peer.ID]protoio.Writer
 	lastAnnouncement *pb.RegistrationRecord
 }
 
@@ -52,7 +52,6 @@ func (ps *PubSub) Subscribe(ns string) (syncDetails string, err error) {
 		PeerID:      ps.host.ID().String(),
 		ChannelName: ns,
 	})
-
 	if err != nil {
 		return "", fmt.Errorf("unable to marshal subscription details: %w", err)
 	}
@@ -73,7 +72,7 @@ func (ps *PubSub) getOrCreateTopic(ns string) *PubSubSubscribers {
 	}
 
 	ps.topics[ns] = &PubSubSubscribers{
-		subscribers:      map[peer.ID]ggio.Writer{},
+		subscribers:      map[peer.ID]protoio.Writer{},
 		lastAnnouncement: nil,
 	}
 	return ps.topics[ns]
@@ -110,8 +109,8 @@ func (ps *PubSub) Listen() {
 func (ps *PubSub) handleStream(s inet.Stream) {
 	defer s.Reset()
 
-	r := ggio.NewDelimitedReader(s, inet.MessageSizeMax)
-	w := ggio.NewDelimitedWriter(s)
+	r := protoio.NewDelimitedReader(s, inet.MessageSizeMax)
+	w := protoio.NewDelimitedWriter(s)
 
 	subscribedTopics := map[string]struct{}{}
 
@@ -152,5 +151,7 @@ func (ps *PubSub) handleStream(s inet.Stream) {
 	}
 }
 
-var _ RendezvousSync = (*PubSub)(nil)
-var _ RendezvousSyncSubscribable = (*PubSub)(nil)
+var (
+	_ RendezvousSync             = (*PubSub)(nil)
+	_ RendezvousSyncSubscribable = (*PubSub)(nil)
+)

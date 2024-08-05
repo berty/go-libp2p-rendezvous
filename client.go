@@ -6,17 +6,15 @@ import (
 	"math/rand"
 	"time"
 
-	ggio "github.com/gogo/protobuf/io"
 	"github.com/libp2p/go-libp2p/core/host"
 	inet "github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	pb "github.com/berty/go-libp2p-rendezvous/pb"
+	protoio "github.com/berty/go-libp2p-rendezvous/protoio"
 )
 
-var (
-	DiscoverAsyncInterval = 2 * time.Minute
-)
+var DiscoverAsyncInterval = 2 * time.Minute
 
 type RendezvousPoint interface {
 	Register(ctx context.Context, ns string, ttl int) (time.Duration, error)
@@ -76,8 +74,8 @@ func (rp *rendezvousPoint) Register(ctx context.Context, ns string, ttl int) (ti
 	}
 	defer s.Reset()
 
-	r := ggio.NewDelimitedReader(s, inet.MessageSizeMax)
-	w := ggio.NewDelimitedWriter(s)
+	r := protoio.NewDelimitedReader(s, inet.MessageSizeMax)
+	w := protoio.NewDelimitedWriter(s)
 
 	addrs := rp.addrFactory(rp.host.Addrs())
 	if len(addrs) == 0 {
@@ -92,8 +90,7 @@ func (rp *rendezvousPoint) Register(ctx context.Context, ns string, ttl int) (ti
 	}
 
 	var res pb.Message
-	err = r.ReadMsg(&res)
-	if err != nil {
+	if err := r.ReadMsg(&res); err != nil {
 		return 0, err
 	}
 
@@ -163,7 +160,7 @@ func (rp *rendezvousPoint) Unregister(ctx context.Context, ns string) error {
 	}
 	defer s.Close()
 
-	w := ggio.NewDelimitedWriter(s)
+	w := protoio.NewDelimitedWriter(s)
 	req := newUnregisterMessage(ns, rp.host.ID())
 	return w.WriteMsg(req)
 }
@@ -179,13 +176,12 @@ func (rp *rendezvousPoint) Discover(ctx context.Context, ns string, limit int, c
 	}
 	defer s.Reset()
 
-	r := ggio.NewDelimitedReader(s, inet.MessageSizeMax)
-	w := ggio.NewDelimitedWriter(s)
-
+	r := protoio.NewDelimitedReader(s, inet.MessageSizeMax)
+	w := protoio.NewDelimitedWriter(s)
 	return discoverQuery(ns, limit, cookie, r, w)
 }
 
-func discoverQuery(ns string, limit int, cookie []byte, r ggio.Reader, w ggio.Writer) ([]Registration, []byte, error) {
+func discoverQuery(ns string, limit int, cookie []byte, r protoio.Reader, w protoio.Writer) ([]Registration, []byte, error) {
 	req := newDiscoverMessage(ns, limit, cookie)
 	err := w.WriteMsg(req)
 	if err != nil {
@@ -199,7 +195,7 @@ func discoverQuery(ns string, limit int, cookie []byte, r ggio.Reader, w ggio.Wr
 	}
 
 	if res.GetType() != pb.Message_DISCOVER_RESPONSE {
-		return nil, nil, fmt.Errorf("Unexpected response: %s", res.GetType().String())
+		return nil, nil, fmt.Errorf("unexpected response: %s", res.GetType().String())
 	}
 
 	status := res.GetDiscoverResponse().GetStatus()
@@ -236,8 +232,8 @@ func discoverAsync(ctx context.Context, ns string, s inet.Stream, ch chan Regist
 	defer s.Reset()
 	defer close(ch)
 
-	r := ggio.NewDelimitedReader(s, inet.MessageSizeMax)
-	w := ggio.NewDelimitedWriter(s)
+	r := protoio.NewDelimitedReader(s, inet.MessageSizeMax)
+	w := protoio.NewDelimitedWriter(s)
 
 	const batch = 200
 
@@ -343,8 +339,8 @@ func (rp *rendezvousPoint) DiscoverSubscribe(ctx context.Context, ns string, ser
 	}
 	defer s.Close()
 
-	r := ggio.NewDelimitedReader(s, inet.MessageSizeMax)
-	w := ggio.NewDelimitedWriter(s)
+	r := protoio.NewDelimitedReader(s, inet.MessageSizeMax)
+	w := protoio.NewDelimitedWriter(s)
 
 	subType, subDetails, err := discoverSubscribeQuery(ns, serviceTypes, r, w)
 	if err != nil {
@@ -386,7 +382,7 @@ func (rp *rendezvousPoint) DiscoverSubscribe(ctx context.Context, ns string, ser
 	return ch, nil
 }
 
-func discoverSubscribeQuery(ns string, serviceTypes []string, r ggio.Reader, w ggio.Writer) (subType string, subDetails string, err error) {
+func discoverSubscribeQuery(ns string, serviceTypes []string, r protoio.Reader, w protoio.Writer) (subType string, subDetails string, err error) {
 	req := &pb.Message{
 		Type:              pb.Message_DISCOVER_SUBSCRIBE,
 		DiscoverSubscribe: newDiscoverSubscribeMessage(ns, serviceTypes),

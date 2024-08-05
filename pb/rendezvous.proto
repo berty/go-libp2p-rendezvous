@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package rendezvous.pb;
 
+option go_package = "github.com/berty/go-libp2p-rendezvous/pb";
+
 message Message {
   enum MessageType {
     REGISTER = 0;

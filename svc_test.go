@@ -7,15 +7,15 @@ import (
 	"testing"
 	"time"
 
-	mocknet "github.com/berty/go-libp2p-mock"
-	ggio "github.com/gogo/protobuf/io"
 	"github.com/libp2p/go-libp2p/core/host"
 	inet "github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
 	db "github.com/berty/go-libp2p-rendezvous/db/sqlite"
 	pb "github.com/berty/go-libp2p-rendezvous/pb"
+	protoio "github.com/berty/go-libp2p-rendezvous/protoio"
 	"github.com/berty/go-libp2p-rendezvous/test_utils"
 )
 
@@ -140,14 +140,23 @@ func TestSVCErrors(t *testing.T) {
 	require.NoError(t, err)
 	defer svc.DB.Close()
 
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	seededRand := rand.New(rand.NewSource(time.Now().UnixNano()))
+	generateRandomString := func(length int) string {
+		b := make([]byte, length)
+		for i := range b {
+			b[i] = charset[seededRand.Intn(len(charset))]
+		}
+		return string(b)
+	}
+
 	// testable registration errors
 	res, err := doTestRequest(ctx, hosts[1], hosts[0].ID(),
 		newRegisterMessage("", peer.AddrInfo{}, 0))
 	require.NoError(t, err)
 	require.Equal(t, pb.Message_E_INVALID_NAMESPACE, res.GetRegisterResponse().GetStatus())
 
-	badns := make([]byte, 2*MaxNamespaceLength)
-	rand.Read(badns)
+	badns := generateRandomString(2 * MaxNamespaceLength)
 	res, err = doTestRequest(ctx, hosts[1], hosts[0].ID(),
 		newRegisterMessage(string(badns), peer.AddrInfo{}, 0))
 	require.NoError(t, err)
@@ -206,14 +215,14 @@ func TestSVCErrors(t *testing.T) {
 	require.Equal(t, pb.Message_E_INVALID_NAMESPACE, res.GetDiscoverResponse().GetStatus())
 
 	badcookie := make([]byte, 10)
-	rand.Read(badcookie)
+	seededRand.Read(badcookie)
 	res, err = doTestRequest(ctx, hosts[1], hosts[0].ID(),
 		newDiscoverMessage("foo", 0, badcookie))
 	require.NoError(t, err)
 	require.Equal(t, pb.Message_E_INVALID_COOKIE, res.GetDiscoverResponse().GetStatus())
 
 	badcookie = make([]byte, 40)
-	rand.Read(badcookie)
+	seededRand.Read(badcookie)
 	res, err = doTestRequest(ctx, hosts[1], hosts[0].ID(),
 		newDiscoverMessage("foo", 0, badcookie))
 	require.NoError(t, err)
@@ -227,8 +236,8 @@ func doTestRequest(ctx context.Context, host host.Host, rp peer.ID, m *pb.Messag
 	}
 	defer s.Close()
 
-	r := ggio.NewDelimitedReader(s, inet.MessageSizeMax)
-	w := ggio.NewDelimitedWriter(s)
+	r := protoio.NewDelimitedReader(s, inet.MessageSizeMax)
+	w := protoio.NewDelimitedWriter(s)
 
 	err = w.WriteMsg(m)
 	if err != nil {

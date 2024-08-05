@@ -5,9 +5,6 @@ go 1.22
 toolchain go1.22.5
 
 require (
-	github.com/berty/go-libp2p-mock v1.0.2-0.20240719150538-d7088679a8a7
-	github.com/gogo/protobuf v1.3.2
-	github.com/golang/protobuf v1.5.3
 	github.com/google/uuid v1.4.0
 	github.com/ipfs/go-log/v2 v2.5.1
 	github.com/libp2p/go-libp2p v0.34.1
@@ -15,6 +12,7 @@ require (
 	github.com/multiformats/go-multiaddr v0.12.4
 	github.com/mutecomm/go-sqlcipher/v4 v4.4.2
 	github.com/stretchr/testify v1.9.0
+	google.golang.org/protobuf v1.34.1
 )
 
 require (
@@ -91,7 +89,6 @@ require (
 	golang.org/x/sys v0.20.0 // indirect
 	golang.org/x/text v0.15.0 // indirect
 	golang.org/x/tools v0.21.0 // indirect
-	google.golang.org/protobuf v1.34.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	lukechampine.com/blake3 v1.2.1 // indirect
 )
